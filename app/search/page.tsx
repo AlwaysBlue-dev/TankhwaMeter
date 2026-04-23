@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Search, MapPin, Building2, Clock, Users, ShieldCheck } from "lucide-react";
+import { MapPin, Building2, Clock, Users, ShieldCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Salary, JobCategory } from "@/lib/types";
 import SalaryComparison from "@/components/SalaryComparison";
@@ -8,6 +8,7 @@ import BackToTop from "@/components/BackToTop";
 import ConsistencyBadge from "@/components/ConsistencyBadge";
 import ExperienceBreakdown from "@/components/ExperienceBreakdown";
 import FlagButton from "@/components/FlagButton";
+import SearchFilters from "@/components/SearchFilters";
 import { formatSalary, timeAgo } from "@/lib/utils/format";
 import { calculateConsistency } from "@/lib/utils/consistency";
 
@@ -16,38 +17,7 @@ export const revalidate = 300;
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 20;
-
-const CITIES = [
-  "Karachi", "Lahore", "Islamabad", "Rawalpindi",
-  "Peshawar", "Quetta", "Multan", "Remote",
-];
-
-const EXPERIENCE_OPTIONS = [
-  { label: "0–1 year", value: "0" },
-  { label: "1–3 years", value: "1" },
-  { label: "3–5 years", value: "3" },
-  { label: "5–10 years", value: "5" },
-  { label: "10+ years", value: "10" },
-];
-
-const SORT_OPTIONS = [
-  { label: "Most Recent", value: "recent" },
-  { label: "Highest Salary", value: "highest" },
-  { label: "Lowest Salary", value: "lowest" },
-];
-
-const PERIOD_OPTIONS = [
-  { label: "All Time", value: "" },
-  { label: "Last 3 Months", value: "3mo" },
-  { label: "Last 6 Months", value: "6mo" },
-  { label: "Last 12 Months", value: "12mo" },
-];
-
-const SELECT_CLS =
-  "h-10 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 text-sm text-[#0F172A] " +
-  "outline-none transition-all duration-200 " +
-  "focus-visible:border-[#2563EB] focus-visible:ring-2 focus-visible:ring-[#2563EB]/20 " +
-  "disabled:opacity-50";
+const TOP_COMPANIES_FETCH_CHUNK = 1000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -84,9 +54,10 @@ export async function generateMetadata({
   const raw      = await searchParams;
   const q        = str(raw.q);
   const jobTitle = str(raw.job_title);
+  const company  = str(raw.company);
   const city     = str(raw.city);
   const industry = str(raw.industry);
-  const role     = jobTitle || q || industry;
+  const role     = jobTitle || q || industry || company;
 
   let title       = "Search Salaries";
   let description = "Browse anonymous salary data from Pakistani professionals. Filter by city, industry, and experience.";
@@ -122,6 +93,7 @@ export default async function SearchPage({
 
   const q          = str(raw.q);
   const jobTitle   = str(raw.job_title);
+  const company    = str(raw.company);
   const city       = str(raw.city);
   const industry   = str(raw.industry);
   const experience = str(raw.experience);
@@ -135,11 +107,16 @@ export default async function SearchPage({
   const cutoff    = periodCutoff(period);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function applyFilters(qb: any, includeDateFilter = true): any {
+  function applyFilters(
+    qb: any,
+    options: { includeDateFilter?: boolean; includeCompanyFilter?: boolean } = {}
+  ): any {
+    const { includeDateFilter = true, includeCompanyFilter = true } = options;
     qb = qb.eq("is_flagged", false);
     if (q)          qb = qb.or(`job_title.ilike.%${q}%,company.ilike.%${q}%`);
     if (jobTitle)   qb = qb.ilike("job_title", `%${jobTitle}%`);
-    if (city)       qb = qb.eq("city", city);
+    if (includeCompanyFilter && company) qb = qb.ilike("company", `%${company}%`);
+    if (city) qb = qb.eq("city", city);
     if (industry)   qb = qb.eq("industry", industry);
     if (experience) qb = qb.eq("experience_years", Number(experience));
     if (includeDateFilter && cutoff) qb = qb.gte("submitted_at", cutoff);
@@ -152,6 +129,7 @@ export default async function SearchPage({
   let results:    Salary[]      = [];
   let totalCount  = 0;
   let allTimeCount: number | null = null;
+  let topCompanies: { company: string; count: number }[] = [];
 
   try {
     const [catsRes, statsRes, resultsRes, allTimeRes] = await Promise.all([
@@ -175,18 +153,50 @@ export default async function SearchPage({
       cutoff
         ? applyFilters(
             supabase.from("salaries").select("id", { count: "exact", head: true }),
-            false
+            { includeDateFilter: false }
           )
         : Promise.resolve({ count: null, error: null }),
     ]);
 
-    if (statsRes.error || resultsRes.error) throw new Error("Supabase query failed");
+    if (statsRes.error || resultsRes.error) {
+      throw new Error("Supabase query failed");
+    }
 
     categories   = (catsRes.data  ?? []) as JobCategory[];
     salaries     = (statsRes.data ?? []) as SalaryStats[];
     results      = (resultsRes.data ?? []) as Salary[];
     totalCount   = statsRes.count ?? 0;
     allTimeCount = allTimeRes.count ?? null;
+
+    const allCompanyRows: { company: string | null }[] = [];
+    for (let offset = 0; ; offset += TOP_COMPANIES_FETCH_CHUNK) {
+      const chunkRes = await applyFilters(
+        supabase
+          .from("salaries")
+          .select("company")
+          .range(offset, offset + TOP_COMPANIES_FETCH_CHUNK - 1),
+        { includeCompanyFilter: false }
+      );
+
+      if (chunkRes.error) {
+        throw new Error("Top companies query failed");
+      }
+
+      const chunk = (chunkRes.data ?? []) as { company: string | null }[];
+      allCompanyRows.push(...chunk);
+      if (chunk.length < TOP_COMPANIES_FETCH_CHUNK) break;
+    }
+
+    const companyCounts = new Map<string, number>();
+    for (const row of allCompanyRows) {
+      const name = String(row.company ?? "").trim();
+      if (!name) continue;
+      companyCounts.set(name, (companyCounts.get(name) ?? 0) + 1);
+    }
+    topCompanies = Array.from(companyCounts.entries())
+      .map(([company, count]) => ({ company, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
   } catch {
     fetchError = true;
   }
@@ -212,6 +222,7 @@ export default async function SearchPage({
   const linkParams: Record<string, string> = {};
   if (q)          linkParams.q          = q;
   if (jobTitle)   linkParams.job_title  = jobTitle;
+  if (company)    linkParams.company    = company;
   if (city)       linkParams.city       = city;
   if (industry)   linkParams.industry   = industry;
   if (experience) linkParams.experience = experience;
@@ -244,58 +255,19 @@ export default async function SearchPage({
 
       {/* ── Filter card ── */}
       <div className="mb-8 rounded-2xl bg-white p-5 shadow-[0_4px_16px_rgba(0,0,0,0.10)]">
-        <form action="/search" method="GET" className="space-y-3">
-          {/* Search input */}
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-            <input
-              name="q"
-              type="search"
-              defaultValue={q}
-              placeholder="Search job title or company..."
-              className={
-                "h-12 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] pl-10 pr-4 text-sm text-[#0F172A] " +
-                "outline-none placeholder:text-[#94A3B8] transition-all duration-200 " +
-                "focus-visible:border-[#2563EB] focus-visible:ring-2 focus-visible:ring-[#2563EB]/20"
-              }
-            />
-          </div>
-
-          {/* Filter dropdowns */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <select name="city" defaultValue={city} className={SELECT_CLS}>
-              <option value="">All Cities</option>
-              {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-
-            <select name="industry" defaultValue={industry} className={SELECT_CLS}>
-              <option value="">All Industries</option>
-              {categories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-
-            <select name="experience" defaultValue={experience} className={SELECT_CLS}>
-              <option value="">Any Experience</option>
-              {EXPERIENCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-
-            <select name="period" defaultValue={period} className={SELECT_CLS}>
-              {PERIOD_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-
-          {/* Sort + submit */}
-          <div className="flex gap-3">
-            <select name="sort" defaultValue={sort} className={`${SELECT_CLS} flex-1 sm:max-w-[200px]`}>
-              {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <button
-              type="submit"
-              className="h-10 rounded-lg bg-[#2563EB] px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-[#1D4ED8] active:scale-[0.97]"
-            >
-              Search
-            </button>
-          </div>
-        </form>
+        <SearchFilters
+          categories={categories}
+          values={{
+            q,
+            city,
+            industry,
+            experience,
+            period,
+            sort,
+            company,
+            jobTitle,
+          }}
+        />
       </div>
 
       {/* Active job_title pill */}
@@ -363,6 +335,47 @@ export default async function SearchPage({
         </div>
       )}
 
+      {/* Top companies */}
+      {hasResults && topCompanies.length > 0 && (
+        <div className="mb-4 rounded-xl border border-[#E2E8F0] bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-[#0F172A]">
+              Top Companies in these results
+            </p>
+            {company && (
+              <Link
+                href="/search"
+                className="text-xs font-medium text-[#2563EB] hover:underline"
+              >
+                Remove filters (Show all)
+              </Link>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {topCompanies.map((item) => (
+              <Link
+                key={item.company}
+                href={`/search?${new URLSearchParams({
+                  ...linkParams,
+                  company: item.company,
+                  page: "1",
+                }).toString()}`}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  company === item.company
+                    ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB]"
+                    : "border-[#E2E8F0] bg-[#F8FAFC] text-[#334155] hover:border-[#2563EB] hover:text-[#2563EB]"
+                }`}
+              >
+                <span>{item.company}</span>
+                <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-[#64748B]">
+                  {item.count}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Experience breakdown */}
       {hasResults && total >= 3 && (
         <ExperienceBreakdown salaries={salaries} />
@@ -402,7 +415,16 @@ export default async function SearchPage({
                     <p className="font-semibold leading-snug text-[#0F172A]">{s.job_title}</p>
                     <div className="mt-1 flex items-center gap-1 text-sm text-[#64748B]">
                       <Building2 className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{s.company}</span>
+                      <Link
+                        href={`/search?${new URLSearchParams({
+                          ...linkParams,
+                          company: s.company,
+                          page: "1",
+                        }).toString()}`}
+                        className="truncate hover:text-[#2563EB] hover:underline"
+                      >
+                        {s.company}
+                      </Link>
                     </div>
                   </div>
 

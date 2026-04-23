@@ -37,6 +37,51 @@ function getIp(req: NextRequest): string {
   return req.headers.get("x-real-ip") ?? "unknown";
 }
 
+async function syncCompanyAndRole(
+  supabase: ReturnType<typeof serverClient>,
+  params: { company: string; industry: string; city: string; role: string }
+) {
+  const companyName = params.company.trim();
+  const industry = params.industry.trim();
+  const city = params.city.trim();
+  const role = params.role.trim();
+
+  if (!companyName || !role) return;
+
+  // Requires composite uniqueness on (name, industry, city) in `companies`.
+  const { data: companyData, error: companyError } = await supabase
+    .from("companies")
+    .upsert(
+      {
+        name: companyName,
+        industry,
+        city,
+      },
+      { onConflict: "name,industry,city" }
+    )
+    .select("id")
+    .single();
+
+  if (companyError) {
+    throw new Error(`company upsert failed: ${companyError.message}`);
+  }
+
+  // Requires `company_roles(company_id, role_name)` unique constraint.
+  const { error: roleError } = await supabase
+    .from("company_roles")
+    .upsert(
+      {
+        company_id: companyData.id,
+        role_name: role,
+      },
+      { onConflict: "company_id,role_name" }
+    );
+
+  if (roleError) {
+    throw new Error(`company_roles upsert failed: ${roleError.message}`);
+  }
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────────
 
 type FieldError = { field: string; message: string };
@@ -125,15 +170,19 @@ export async function POST(request: NextRequest) {
   // ── 5. Insert salary ───────────────────────────────────────────────────────
   const isVerified     = body.is_verified === true;
   const verifiedDomain = isVerified ? String(body.verified_domain ?? "").trim() || null : null;
+  const jobTitle       = String(body.job_title).trim();
+  const company        = String(body.company).trim();
+  const industry       = String(body.industry ?? "").trim();
+  const city           = String(body.city).trim();
   if (isVerified) console.info("[submit-salary] verified submission received");
 
   const { data, error: salaryError } = await supabase
     .from("salaries")
     .insert({
-      job_title:          String(body.job_title).trim(),
-      company:            String(body.company).trim(),
-      industry:           String(body.industry   ?? "").trim(),
-      city:               String(body.city),
+      job_title:          jobTitle,
+      company,
+      industry,
+      city,
       experience_years:   Number(body.experience_years),
       monthly_salary_pkr: salary,
       education:          String(body.education  ?? ""),
@@ -149,6 +198,18 @@ export async function POST(request: NextRequest) {
     console.error("[submit-salary] insert error:", salaryError.message);
     return Response.json({ error: "Failed to save submission." }, { status: 500 });
   }
+
+  // Keep salary writes successful even if company sync fails.
+  syncCompanyAndRole(supabase, {
+    company,
+    industry,
+    city,
+    role: jobTitle,
+  }).catch((error: unknown) => {
+    const message =
+      error instanceof Error ? error.message : "unknown company sync error";
+    console.error("[submit-salary] company sync error:", message);
+  });
 
   // ── 6. Log IP (fire-and-forget; never block the success response) ──────────
   supabase

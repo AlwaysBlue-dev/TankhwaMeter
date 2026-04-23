@@ -7,6 +7,8 @@ import { TrendingUp, Menu, X } from "lucide-react";
 const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/search", label: "Search" },
+  { href: "/companies", label: "Companies" },
+  { href: "/compare", label: "Compare" },
   { href: "/trust", label: "How It Works" },
 ];
 
