@@ -9,6 +9,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import type { TooltipItem } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -200,8 +201,8 @@ export default function SalaryComparison() {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (ctx: { parsed: { x: number } }) =>
-            " " + formatSalary(ctx.parsed.x),
+          label: (ctx: TooltipItem<"bar">) =>
+            " " + formatSalary(ctx.parsed.x ?? 0),
         },
       },
     },
