@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Search, MapPin, Building2, Clock, Users } from "lucide-react";
+import { Search, MapPin, Building2, Clock, Users, ShieldCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Salary, JobCategory } from "@/lib/types";
 import SalaryComparison from "@/components/SalaryComparison";
@@ -111,7 +111,7 @@ export async function generateMetadata({
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
-type SalaryStats = Pick<Salary, "monthly_salary_pkr" | "experience_years">;
+type SalaryStats = Pick<Salary, "monthly_salary_pkr" | "experience_years" | "is_verified">;
 
 export default async function SearchPage({
   searchParams,
@@ -160,7 +160,7 @@ export default async function SearchPage({
       applyFilters(
         supabase
           .from("salaries")
-          .select("monthly_salary_pkr, experience_years", { count: "exact" })
+          .select("monthly_salary_pkr, experience_years, is_verified", { count: "exact" })
           .limit(5000)
       ),
 
@@ -196,12 +196,13 @@ export default async function SearchPage({
   const hasResults = results.length > 0;
   const hasFilters = !!(q || jobTitle || city || industry || experience);
 
-  const vals   = salaries.map((s) => s.monthly_salary_pkr);
+  const vals          = salaries.map((s) => s.monthly_salary_pkr);
+  const verifiedCount = salaries.filter((s) => s.is_verified).length;
   const avgSal = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
   const maxSal = vals.length ? Math.max(...vals) : 0;
   const minSal = vals.length ? Math.min(...vals) : 0;
 
-  const consistency = vals.length >= 5 ? calculateConsistency(vals) : null;
+  const consistency = vals.length >= 5 ? calculateConsistency(vals, verifiedCount) : null;
 
   const hiddenCount =
     allTimeCount !== null && allTimeCount > total * 1.2
@@ -312,19 +313,23 @@ export default async function SearchPage({
 
       {/* ── Stats cards ── */}
       {hasResults && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className={`mb-4 grid grid-cols-2 gap-3 ${verifiedCount > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
           {[
             { label: "Results Found",  value: total.toLocaleString(),    accent: "#2563EB" },
             { label: "Average Salary", value: formatSalary(avgSal),      accent: "#10B981" },
             { label: "Highest Salary", value: formatSalary(maxSal),      accent: "#10B981" },
             { label: "Lowest Salary",  value: formatSalary(minSal),      accent: "#F59E0B" },
+            ...(verifiedCount > 0 ? [{ label: "Verified", value: verifiedCount.toLocaleString(), accent: "#10B981" }] : []),
           ].map((stat) => (
             <div
               key={stat.label}
               className="rounded-xl border-l-4 bg-white px-4 py-3.5 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
               style={{ borderLeftColor: stat.accent }}
             >
-              <p className="text-xs text-[#94A3B8]">{stat.label}</p>
+              <p className="flex items-center gap-1 text-xs text-[#94A3B8]">
+                {stat.label === "Verified" && <ShieldCheck className="h-3 w-3 text-[#10B981]" />}
+                {stat.label}
+              </p>
               <p className="mt-0.5 truncate text-base font-bold tabular-nums text-[#0F172A]">
                 {stat.value}
               </p>
@@ -428,6 +433,12 @@ export default async function SearchPage({
                         <Clock className="h-3 w-3" />
                         {timeAgo(s.submitted_at)}
                       </span>
+                      {s.is_verified && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#ECFDF5] px-2 py-0.5 text-xs font-medium text-[#10B981]">
+                          <ShieldCheck className="h-3 w-3" />
+                          Work Email Verified
+                        </span>
+                      )}
                       <span className="opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                         <FlagButton id={s.id} />
                       </span>

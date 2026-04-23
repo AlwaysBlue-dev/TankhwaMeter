@@ -57,8 +57,9 @@ type FormData = {
   is_remote: boolean;
 };
 
-type FormErrors = Partial<Record<keyof FormData | "submit", string>>;
-type Status = "idle" | "submitting" | "success" | "rate_limited";
+type FormErrors  = Partial<Record<keyof FormData | "submit", string>>;
+type Status      = "idle" | "submitting" | "success" | "rate_limited";
+type VerifyStep  = "card" | "sending" | "otp" | "verifying" | "verified" | "skipped";
 
 const INITIAL_FORM: FormData = {
   job_title: "", company: "", industry: "", city: "",
@@ -105,11 +106,22 @@ function Field({ label, error, children }: { label: string; error?: string; chil
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function SubmitForm() {
-  const [form, setForm]         = useState<FormData>(INITIAL_FORM);
-  const [errors, setErrors]     = useState<FormErrors>({});
+  const [form, setForm]             = useState<FormData>(INITIAL_FORM);
+  const [errors, setErrors]         = useState<FormErrors>({});
   const [categories, setCategories] = useState<JobCategory[]>([]);
-  const [status, setStatus]     = useState<Status>("idle");
+  const [status, setStatus]         = useState<Status>("idle");
   const honeypotRef = useRef<HTMLInputElement>(null);
+
+  // ── Verification state ────────────────────────────────────────────────────────
+  const [verifyStep,     setVerifyStep]     = useState<VerifyStep>("card");
+  const [verifyEmail,    setVerifyEmail]    = useState("");
+  const [otpValue,       setOtpValue]       = useState("");
+  const [verifyError,    setVerifyError]    = useState("");
+  const [verifyLoading,  setVerifyLoading]  = useState(false);
+  const [expiresAt,      setExpiresAt]      = useState(0);
+  const [resendAfter,    setResendAfter]    = useState(0);
+  const [tickNow,        setTickNow]        = useState(() => Date.now());
+  const [verifiedDomain, setVerifiedDomain] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -119,9 +131,73 @@ export default function SubmitForm() {
       .then(({ data }) => setCategories(data ?? []));
   }, []);
 
+  useEffect(() => {
+    if (verifyStep !== "otp" && verifyStep !== "verifying") return;
+    const interval = setInterval(() => setTickNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [verifyStep]);
+
   function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
+  }
+
+  async function sendOtp() {
+    setVerifyError("");
+    setVerifyStep("sending");
+    const res  = await fetch("/api/verify/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: verifyEmail }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setVerifyError(data.error ?? "Failed to send code.");
+      setVerifyStep("card");
+      return;
+    }
+    setExpiresAt(Date.now() + 15 * 60 * 1000);
+    setResendAfter(Date.now() + 60 * 1000);
+    setOtpValue("");
+    setVerifyStep("otp");
+  }
+
+  async function resendOtp() {
+    setVerifyError("");
+    setVerifyLoading(true);
+    const res  = await fetch("/api/verify/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: verifyEmail }),
+    });
+    const data = await res.json();
+    setVerifyLoading(false);
+    if (!res.ok) {
+      setVerifyError(data.error ?? "Failed to resend code.");
+      return;
+    }
+    setExpiresAt(Date.now() + 15 * 60 * 1000);
+    setResendAfter(Date.now() + 60 * 1000);
+    setOtpValue("");
+    setVerifyError("");
+  }
+
+  async function confirmOtp() {
+    setVerifyError("");
+    setVerifyStep("verifying");
+    const res  = await fetch("/api/verify/confirm-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: verifyEmail, otp: otpValue }),
+    });
+    const data = await res.json();
+    if (!data.verified) {
+      setVerifyError(data.error ?? "Verification failed.");
+      setVerifyStep("otp");
+      return;
+    }
+    setVerifiedDomain(data.domain);
+    setVerifyStep("verified");
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -148,6 +224,8 @@ export default function SubmitForm() {
         education:          form.education,
         is_remote:          form.is_remote,
         website:            honeypotRef.current?.value ?? "",
+        is_verified:        verifyStep === "verified",
+        verified_domain:    verifyStep === "verified" ? verifiedDomain : null,
       }),
     });
 
@@ -234,6 +312,12 @@ export default function SubmitForm() {
 
   // ── Form ─────────────────────────────────────────────────────────────────────
 
+  const secondsLeft   = (verifyStep === "otp" || verifyStep === "verifying") && expiresAt > 0
+    ? Math.max(0, Math.floor((expiresAt - tickNow) / 1000))
+    : 0;
+  const timerDisplay  = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
+  const canResend     = (verifyStep === "otp" || verifyStep === "verifying") && resendAfter > 0 && tickNow >= resendAfter;
+
   const salaryNum = Number(form.monthly_salary_pkr);
   const salaryPreview =
     form.monthly_salary_pkr && !isNaN(salaryNum) && salaryNum >= 5000
@@ -255,6 +339,121 @@ export default function SubmitForm() {
             <h1 className="mb-1 text-3xl font-bold text-[#0F172A]">Submit Your Salary</h1>
             <p className="text-[#64748B]">Help thousands of Pakistanis know their worth.</p>
           </div>
+
+          {/* ── Verification card ── */}
+          {verifyStep === "skipped" ? (
+            <p className="mb-4 text-xs text-[#94A3B8]">
+              Submitting without verification — you can verify to earn a trust badge
+            </p>
+          ) : (
+            <div className="mb-6 rounded-2xl border-l-4 border-[#10B981] bg-[#ECFDF5] p-5">
+              <div className="mb-3 flex items-center gap-2.5">
+                <ShieldCheck className="h-5 w-5 shrink-0 text-[#10B981]" />
+                <h2 className="font-semibold text-[#065F46]">Verify your employment (optional)</h2>
+              </div>
+
+              {verifyStep === "verified" ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#10B981]">
+                    <CheckCircle2 className="h-5 w-5 text-white" />
+                  </div>
+                  <p className="text-sm font-medium text-[#065F46]">
+                    Verified! Your submission will include a Work Email Verified badge.
+                  </p>
+                </div>
+              ) : verifyStep === "otp" || verifyStep === "verifying" ? (
+                <div>
+                  <p className="mb-3 text-sm text-[#064E3B]">
+                    Enter the 6-digit code we sent to your work email
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="123456"
+                      value={otpValue}
+                      onChange={(e) => { setOtpValue(e.target.value.replace(/\D/g, "")); setVerifyError(""); }}
+                      disabled={verifyStep === "verifying"}
+                      className="h-11 w-32 rounded-lg border-[#A7F3D0] bg-white text-center text-xl font-bold tracking-widest focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={confirmOtp}
+                      disabled={otpValue.length !== 6 || verifyStep === "verifying"}
+                      className="h-11 rounded-xl bg-[#10B981] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#059669] disabled:opacity-50"
+                    >
+                      {verifyStep === "verifying"
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : "Verify"}
+                    </button>
+                  </div>
+
+                  {verifyError && (
+                    <p className="mt-2 text-xs text-[#DC2626]">{verifyError}</p>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[#047857]">
+                    {secondsLeft > 0 ? (
+                      <span>Code expires in {timerDisplay}</span>
+                    ) : (
+                      <span className="text-[#DC2626]">Code expired — request a new one</span>
+                    )}
+                    {canResend && (
+                      <button
+                        type="button"
+                        onClick={resendOtp}
+                        disabled={verifyLoading}
+                        className="underline hover:no-underline disabled:opacity-50"
+                      >
+                        {verifyLoading ? "Sending…" : "Resend code"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-3 text-sm text-[#064E3B]">
+                    Get a verified badge on your submission. We send a one-time code to your work email.
+                    We never store your email.
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="email"
+                      placeholder="yourname@company.com"
+                      value={verifyEmail}
+                      onChange={(e) => { setVerifyEmail(e.target.value); setVerifyError(""); }}
+                      disabled={verifyStep === "sending"}
+                      className="h-11 flex-1 rounded-lg border-[#A7F3D0] bg-white focus:border-[#10B981] focus:ring-2 focus:ring-[#10B981]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={sendOtp}
+                      disabled={!verifyEmail.includes("@") || verifyStep === "sending"}
+                      className="h-11 rounded-xl bg-[#10B981] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#059669] disabled:opacity-50"
+                    >
+                      {verifyStep === "sending"
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : "Send Code"}
+                    </button>
+                  </div>
+
+                  {verifyError && (
+                    <p className="mt-2 text-xs text-[#DC2626]">{verifyError}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setVerifyStep("skipped")}
+                    className="mt-2.5 text-xs text-[#6EE7B7] transition-colors hover:text-[#065F46]"
+                  >
+                    Skip — submit without verification →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Card */}
           <div className="rounded-2xl bg-white p-6 shadow-[0_4px_16px_rgba(0,0,0,0.10)] sm:p-8">

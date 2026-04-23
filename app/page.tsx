@@ -4,11 +4,11 @@ import {
   ArrowRight,
   BarChart2,
   Building2,
-  MapPin,
   Briefcase,
   Eye,
   TrendingUp,
   Clock,
+  ShieldCheck,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Salary } from "@/lib/types";
@@ -52,22 +52,22 @@ const HOW_IT_WORKS = [
 ];
 
 async function getStats() {
-  const [submissionsRes, companiesRes, citiesRes, salaryRes] = await Promise.all([
+  const [submissionsRes, companiesRes, verifiedRes, salaryRes] = await Promise.all([
     supabase.from("salaries").select("id", { count: "exact", head: true }),
     supabase.from("salaries").select("company").limit(2000),
-    supabase.from("salaries").select("city").limit(2000),
+    supabase.from("salaries").select("id", { count: "exact", head: true }).eq("is_verified", true),
     supabase.from("salaries").select("monthly_salary_pkr").eq("is_flagged", false).limit(1000),
   ]);
 
   const totalSubmissions = submissionsRes.count ?? 0;
-  const uniqueCompanies = new Set((companiesRes.data ?? []).map((r) => r.company)).size;
-  const uniqueCities = new Set((citiesRes.data ?? []).map((r) => r.city)).size;
+  const uniqueCompanies  = new Set((companiesRes.data ?? []).map((r) => r.company)).size;
+  const verifiedCount    = verifiedRes.count ?? 0;
   const vals = (salaryRes.data ?? []).map((r) => r.monthly_salary_pkr as number);
   const avgSalary = vals.length
     ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
     : 0;
 
-  return { totalSubmissions, uniqueCompanies, uniqueCities, avgSalary };
+  return { totalSubmissions, uniqueCompanies, verifiedCount, avgSalary };
 }
 
 async function getRecentSalaries(): Promise<Salary[]> {
@@ -170,10 +170,10 @@ export default async function Home() {
         <div className="mx-auto max-w-5xl">
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-[#E2E8F0] shadow-[0_4px_16px_rgba(0,0,0,0.10)] sm:grid-cols-4">
             {[
-              { icon: <BarChart2 className="h-5 w-5 text-[#2563EB]" />, label: "Submissions", value: stats.totalSubmissions.toLocaleString() },
-              { icon: <Building2 className="h-5 w-5 text-[#2563EB]" />, label: "Companies", value: stats.uniqueCompanies.toLocaleString() },
-              { icon: <MapPin className="h-5 w-5 text-[#2563EB]" />, label: "Cities", value: stats.uniqueCities.toLocaleString() },
-              { icon: <TrendingUp className="h-5 w-5 text-[#10B981]" />, label: "Avg Monthly Salary", value: stats.avgSalary > 0 ? formatSalary(stats.avgSalary) : "—" },
+              { icon: <BarChart2 className="h-5 w-5 text-[#2563EB]" />,   label: "Submissions",         value: stats.totalSubmissions.toLocaleString() },
+              { icon: <Building2 className="h-5 w-5 text-[#2563EB]" />,   label: "Companies",           value: stats.uniqueCompanies.toLocaleString() },
+              { icon: <ShieldCheck className="h-5 w-5 text-[#10B981]" />, label: "Verified Submissions", value: stats.verifiedCount.toLocaleString() },
+              { icon: <TrendingUp className="h-5 w-5 text-[#10B981]" />,  label: "Avg Monthly Salary",  value: stats.avgSalary > 0 ? formatSalary(stats.avgSalary) : "—" },
             ].map((stat) => (
               <div key={stat.label} className="flex flex-col items-center gap-1.5 bg-white px-4 py-5 text-center">
                 {stat.icon}

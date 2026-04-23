@@ -9,6 +9,7 @@ export type Salary = {
   education: string;
   is_remote: boolean;
   is_verified: boolean;
+  verified_domain: string | null;
   is_flagged: boolean;
   submitted_at: string;
 };

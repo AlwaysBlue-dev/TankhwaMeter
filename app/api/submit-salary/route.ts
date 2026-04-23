@@ -123,6 +123,10 @@ export async function POST(request: NextRequest) {
   const is_flagged = salary > 1_500_000 || salary < 8_000;
 
   // ── 5. Insert salary ───────────────────────────────────────────────────────
+  const isVerified     = body.is_verified === true;
+  const verifiedDomain = isVerified ? String(body.verified_domain ?? "").trim() || null : null;
+  if (isVerified) console.info("[submit-salary] verified submission received");
+
   const { data, error: salaryError } = await supabase
     .from("salaries")
     .insert({
@@ -135,7 +139,8 @@ export async function POST(request: NextRequest) {
       education:          String(body.education  ?? ""),
       is_remote:          Boolean(body.is_remote),
       is_flagged,
-      is_verified: false,
+      is_verified:        isVerified,
+      verified_domain:    verifiedDomain,
     })
     .select("id")
     .single();

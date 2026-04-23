@@ -15,6 +15,7 @@ import {
   Globe,
   ArrowRight,
   Shield,
+  ShieldCheck,
 } from "lucide-react";
 import FAQ from "@/components/FAQ";
 
@@ -100,10 +101,11 @@ const PROTECTION_STEPS = [
 ];
 
 const COMMITMENT_ITEMS = [
-  { icon: <Lock className="h-5 w-5" />,  text: "We never collect your name or email address." },
-  { icon: <Ban className="h-5 w-5" />,   text: "We never sell individual salary data to third parties." },
-  { icon: <EyeOff className="h-5 w-5" />, text: "We never share data that could identify a specific person." },
-  { icon: <Globe className="h-5 w-5" />, text: "The aggregate data is always free to browse — no account, no paywall." },
+  { icon: <Lock className="h-5 w-5" />,       text: "We never collect your name or email address." },
+  { icon: <Ban className="h-5 w-5" />,        text: "We never sell individual salary data to third parties." },
+  { icon: <EyeOff className="h-5 w-5" />,     text: "We never share data that could identify a specific person." },
+  { icon: <Globe className="h-5 w-5" />,      text: "The aggregate data is always free to browse — no account, no paywall." },
+  { icon: <ShieldCheck className="h-5 w-5" />, text: "When you verify with a work email, only your company domain (e.g. systemslimited.com) is saved — your full email address is never stored or logged." },
 ];
 
 export default function TrustPage() {
