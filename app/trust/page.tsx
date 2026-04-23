@@ -22,11 +22,11 @@ import FAQ from "@/components/FAQ";
 export const metadata: Metadata = {
   title: "How It Works & Community Guidelines",
   description:
-    "Learn how PK Salary Compass collects, verifies, and protects anonymous salary data from Pakistani professionals.",
+    "Learn how TankhwaMeter collects, verifies, and protects anonymous salary data from Pakistani professionals.",
   openGraph: {
-    title: "How It Works & Community Guidelines — PK Salary Compass",
+    title: "How It Works & Community Guidelines — TankhwaMeter",
     description:
-      "Learn how PK Salary Compass collects, verifies, and protects anonymous salary data from Pakistani professionals.",
+      "Learn how TankhwaMeter collects, verifies, and protects anonymous salary data from Pakistani professionals.",
   },
 };
 

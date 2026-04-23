@@ -105,7 +105,7 @@ export async function generateMetadata({
   return {
     title,
     description,
-    openGraph: { title: `${title} — PK Salary Compass`, description },
+    openGraph: { title: `${title} — TankhwaMeter`, description },
   };
 }
 

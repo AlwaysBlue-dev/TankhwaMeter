@@ -6,7 +6,8 @@
       "Bash(node -e \"const v = require\\('chart.js/package.json'\\).version; console.log\\('chart.js', v\\)\")",
       "Bash(node -e \"const v = require\\('react-chartjs-2/package.json'\\).version; console.log\\('react-chartjs-2', v\\)\")",
       "Bash(node -e ' *)",
-      "Bash(npx shadcn@latest add accordion --yes)"
+      "Bash(npx shadcn@latest add accordion --yes)",
+      "Bash(npm run *)"
     ]
   }
 }

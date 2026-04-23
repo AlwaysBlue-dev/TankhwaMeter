@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description:
     "Anonymously share your salary to help Pakistani professionals know their worth. No account required.",
   openGraph: {
-    title: "Submit Your Salary — PK Salary Compass",
+    title: "Submit Your Salary — TankhwaMeter",
     description:
       "Anonymously share your salary to help Pakistani professionals know their worth.",
   },

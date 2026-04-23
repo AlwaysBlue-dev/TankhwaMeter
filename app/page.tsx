@@ -18,8 +18,8 @@ import { formatSalary, timeAgo } from "@/lib/utils/format";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "PK Salary Compass — Know Your Worth in Pakistan",
-  openGraph: { title: "PK Salary Compass — Know Your Worth in Pakistan" },
+  title: "TankhwaMeter - Know Your Worth in Pakistan",
+  openGraph: { title: "TankhwaMeter - Know Your Worth in Pakistan" },
 };
 
 const INDUSTRIES = [
@@ -311,7 +311,7 @@ export default async function Home() {
                 <Link
                   key={role.job_title}
                   href={`/search?job_title=${encodeURIComponent(role.job_title)}`}
-                  className="group flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-[#F8FAFC] [&:not(:last-child)]:border-b [&:not(:last-child)]:border-[#E2E8F0]"
+                  className="group flex items-center justify-between gap-4 px-6 py-4 transition-colors hover:bg-[#F8FAFC] not-last:border-b not-last:border-[#E2E8F0]"
                 >
                   <div className="flex items-center gap-4 min-w-0">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF] text-sm font-bold text-[#2563EB]">

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 const SITE_NAME = "TankhwaMeter";
-const DEFAULT_TITLE = "TankhwaMeter — Know Your Worth in Pakistan";
+const DEFAULT_TITLE = "TankhwaMeter";
 const DEFAULT_DESCRIPTION =
   "Anonymous salary data from real Pakistani professionals. " +
   "Compare salaries for any job in Karachi, Lahore, Islamabad and more.";
